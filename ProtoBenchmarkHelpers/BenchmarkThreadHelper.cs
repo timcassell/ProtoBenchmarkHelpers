@@ -203,8 +203,11 @@ namespace Proto.Utilities.Benchmark
             }
             catch (Exception e)
             {
-                exceptions ??= new List<Exception>();
-                exceptions.Add(e);
+                lock (barrier)
+                {
+                    exceptions ??= new List<Exception>();
+                    exceptions.Add(e);
+                }
             }
         }
 
