@@ -3,7 +3,9 @@ Helpers for [BenchmarkDotNet](https://github.com/dotnet/BenchmarkDotNet).
 
 ## BenchmarkThreadHelper
 
-Useful for benchmarking actions ran on multiple threads concurrently. It can be the same action ran multiple times in parallel, like incrementing a counter. Or it can be different actions ran at the same time in parallel, like reading from and writing to a concurrent collection.
+Useful for benchmarking actions ran on multiple threads concurrently more accurately than other solutions.
+
+It can be the same action ran multiple times in parallel, like incrementing a counter. Or it can be different actions ran at the same time in parallel, like reading from and writing to a concurrent collection.
 
 Example, to compare the performance of incrementing a counter using Interlocked vs with a lock:
 
