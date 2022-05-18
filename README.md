@@ -76,15 +76,15 @@ Compare to `System.Threading.Tasks.Parallel`:
 
 |                  Method | MaxConcurrency |     Mean |     Error |    StdDev | Allocated |
 |------------------------ |--------------- |---------:|----------:|----------:|----------:|
-|       ParallellOverhead |             -1 | 3.817 us | 0.0755 us | 0.0741 us |     575 B |
-|    ParallellInterlocked |             -1 | 4.001 us | 0.0792 us | 0.1029 us |     576 B |
-|         ParallellLocked |             -1 | 4.348 us | 0.0414 us | 0.0387 us |     587 B |
+|       ParallelOverhead |             -1 | 3.817 us | 0.0755 us | 0.0741 us |     575 B |
+|    ParallelInterlocked |             -1 | 4.001 us | 0.0792 us | 0.1029 us |     576 B |
+|         ParallelLocked |             -1 | 4.348 us | 0.0414 us | 0.0387 us |     587 B |
 |    ThreadHelperOverhead |             -1 | 1.245 us | 0.0084 us | 0.0070 us |         - |
 | ThreadHelperInterlocked |             -1 | 1.363 us | 0.0089 us | 0.0079 us |         - |
 |      ThreadHelperLocked |             -1 | 2.340 us | 0.0176 us | 0.0164 us |         - |
-|       ParallellOverhead |              2 | 2.625 us | 0.0468 us | 0.0501 us |   1,344 B |
-|    ParallellInterlocked |              2 | 2.539 us | 0.0226 us | 0.0212 us |   1,344 B |
-|         ParallellLocked |              2 | 2.548 us | 0.0183 us | 0.0171 us |   1,344 B |
+|       ParallelOverhead |              2 | 2.625 us | 0.0468 us | 0.0501 us |   1,344 B |
+|    ParallelInterlocked |              2 | 2.539 us | 0.0226 us | 0.0212 us |   1,344 B |
+|         ParallelLocked |              2 | 2.548 us | 0.0183 us | 0.0171 us |   1,344 B |
 |    ThreadHelperOverhead |              2 | 1.214 us | 0.0088 us | 0.0078 us |         - |
 | ThreadHelperInterlocked |              2 | 1.354 us | 0.0077 us | 0.0072 us |         - |
 |      ThreadHelperLocked |              2 | 2.314 us | 0.0306 us | 0.0314 us |         - |
@@ -136,14 +136,14 @@ public class ThreadBenchmarks
     }
 
 
-    [GlobalSetup(Targets = new[] { nameof(ParallellOverhead), nameof(ParallellInterlocked), nameof(ParallellLocked) })]
+    [GlobalSetup(Targets = new[] { nameof(ParallelOverhead), nameof(ParallelInterlocked), nameof(ParallelLocked) })]
     public void SetupParallelOptions()
     {
         parallelOptions = new ParallelOptions() { MaxDegreeOfParallelism = MaxConcurrency };
     }
 
     [Benchmark]
-    public void ParallellOverhead()
+    public void ParallelOverhead()
     {
         Parallel.Invoke(parallelOptions,
             overheadAction,
@@ -153,7 +153,7 @@ public class ThreadBenchmarks
     }
 
     [Benchmark]
-    public void ParallellInterlocked()
+    public void ParallelInterlocked()
     {
         Parallel.Invoke(parallelOptions,
             interlockedAction,
@@ -163,7 +163,7 @@ public class ThreadBenchmarks
     }
 
     [Benchmark]
-    public void ParallellLocked()
+    public void ParallelLocked()
     {
         Parallel.Invoke(parallelOptions,
             lockedAction,
