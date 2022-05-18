@@ -12,12 +12,7 @@ namespace Proto.Utilities.Benchmark
         private class Node
         {
             internal Node next;
-            internal readonly Action action;
-
-            internal Node(Action action)
-            {
-                this.action = action;
-            }
+            internal Action action;
         }
 
         private readonly Barrier barrier = new(1);
@@ -48,7 +43,7 @@ namespace Proto.Utilities.Benchmark
         /// </summary>
         ~BenchmarkThreadHelper()
         {
-            isDisposed = true;
+            DisposeCore();
         }
 
         /// <summary>
@@ -56,8 +51,31 @@ namespace Proto.Utilities.Benchmark
         /// </summary>
         public void Dispose()
         {
-            isDisposed = true;
+            if (isDisposed)
+            {
+                throw new InvalidOperationException("Object is disposed");
+            }
+
+            DisposeCore();
             GC.SuppressFinalize(this);
+        }
+
+        private void DisposeCore()
+        {
+            isDisposed = true;
+            // Overwrite the action on every node to do nothing, then run ExecuteAndWait so that the threads can continue and exit gracefully.
+            for (var node = head; node != null; node = head)
+            {
+                node.action = () => { };
+            }
+            ExecuteAndWait();
+            // Remove the action on every node so it will throw if the user attempts to invoke again.
+            for (var node = head; node != null; node = head)
+            {
+                node.action = null;
+            }
+            // Remove participants in case ExecuteAndWait is called after this, so it won't dead lock.
+            barrier.RemoveParticipants(runningThreadCount);
         }
 
         /// <summary>
@@ -66,31 +84,33 @@ namespace Proto.Utilities.Benchmark
         /// <param name="action">The action to be ran in parallel.</param>
         public void AddAction(Action action)
         {
-            var node = new Node(action);
+            if (isDisposed)
+            {
+                throw new InvalidOperationException("Object is disposed");
+            }
+
+            var node = new Node() { action = action };
             if (head == null)
             {
                 head = node;
                 tail = node;
+                // The first action will always be ran on the calling thread, we don't need to spawn a new thread.
+                return;
+            }
+            tail.next = node;
+            tail = node;
+
+            ++runningThreadCount;
+            barrier.AddParticipant();
+            // We don't need to store a reference to the thread, it will stay alive until this is disposed or the process terminates.
+            // If maxConcurrency is unconstrained, we can more efficiently execute a single action on each thread.
+            if (maxConcurrency == -1)
+            {
+                new Thread(ThreadRunnerIndividual) { IsBackground = true }.Start(node);
             }
             else
             {
-                tail.next = node;
-                tail = node;
-            }
-            if (maxConcurrency == -1 || runningThreadCount < maxConcurrency - 1)
-            {
-                ++runningThreadCount;
-                barrier.AddParticipant();
-                // We don't need to store a reference to the thread, it will stay alive until this is disposed or the process terminates.
-                // If maxConcurrency is unconstrained, we can more efficiently execute a single action on each thread.
-                if (maxConcurrency == -1)
-                {
-                    new Thread(ThreadRunnerIndividual) { IsBackground = true }.Start(action);
-                }
-                else
-                {
-                    new Thread(ThreadRunnerMultiple) { IsBackground = true }.Start();
-                }
+                new Thread(ThreadRunnerMultiple) { IsBackground = true }.Start();
             }
         }
 
@@ -103,6 +123,9 @@ namespace Proto.Utilities.Benchmark
         /// <exception cref="AggregateException"/>
         public void ExecuteAndWait()
         {
+            // Not checking disposed here since this is performance critical.
+            // If this has been disposed, or if AddAction was not called before this, head will be null or its action will be null, so this will throw automatically.
+
             pendingThreadCount = runningThreadCount + 1;
             // Caller thread always gets the first action. No need to synchronize access until the barrier is signaled.
             var node = head;
@@ -110,7 +133,7 @@ namespace Proto.Utilities.Benchmark
             
             barrier.SignalAndWait();
 
-            InvokeAction(node.action);
+            Invoke(node);
             MaybeInvokeActions(TakeNext());
 
             if (pendingThreadCount != 0)
@@ -162,11 +185,11 @@ namespace Proto.Utilities.Benchmark
 
         private void ThreadRunnerIndividual(object state)
         {
-            Action action = (Action) state;
+            Node node = (Node) state;
             while (!isDisposed)
             {
                 barrier.SignalAndWait();
-                InvokeAction(action);
+                Invoke(node);
                 NotifyThreadComplete();
             }
         }
@@ -189,17 +212,17 @@ namespace Proto.Utilities.Benchmark
         {
             while (node != null)
             {
-                InvokeAction(node.action);
+                Invoke(node);
                 node = TakeNext();
             }
             NotifyThreadComplete();
         }
 
-        private void InvokeAction(Action action)
+        private void Invoke(Node node)
         {
             try
             {
-                action();
+                node.action();
             }
             catch (Exception e)
             {
