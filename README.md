@@ -1,4 +1,4 @@
-# ProtoBenchmarkHelpers
+﻿# ProtoBenchmarkHelpers
 Helpers for [BenchmarkDotNet](https://github.com/dotnet/BenchmarkDotNet).
 
 ## BenchmarkThreadHelper
@@ -79,13 +79,13 @@ Compare to `System.Threading.Tasks.Parallel`:
 |        ParallelOverhead |             -1 | 3.714 us | 0.0741 us | 0.1015 us |     575 B |
 |     ParallelInterlocked |             -1 | 3.969 us | 0.0776 us | 0.0924 us |     578 B |
 |          ParallelLocked |             -1 | 4.326 us | 0.0351 us | 0.0293 us |     585 B |
-|    ThreadHelperOverhead |             -1 | 1.094 us | 0.0030 us | 0.0028 us |         - |
-| ThreadHelperInterlocked |             -1 | 1.189 us | 0.0019 us | 0.0016 us |         - |
-|      ThreadHelperLocked |             -1 | 1.822 us | 0.0084 us | 0.0070 us |         - |
+|    ThreadHelperOverhead |             -1 | 1.031 μs | 0.0022 μs | 0.0020 μs |         - |
+| ThreadHelperInterlocked |             -1 | 1.158 μs | 0.0030 μs | 0.0025 μs |         - |
+|      ThreadHelperLocked |             -1 | 1.754 μs | 0.0038 μs | 0.0036 μs |         - |
 |        ParallelOverhead |              2 | 2.504 us | 0.0173 us | 0.0153 us |   1,344 B |
 |     ParallelInterlocked |              2 | 2.482 us | 0.0159 us | 0.0133 us |   1,344 B |
 |          ParallelLocked |              2 | 2.552 us | 0.0143 us | 0.0127 us |   1,344 B |
-|    ThreadHelperOverhead |              2 | 1.108 us | 0.0041 us | 0.0034 us |         - |
+|    ThreadHelperOverhead |              2 | 1.038 us | 0.0030 us | 0.0027 us |         - |
 | ThreadHelperInterlocked |              2 | 1.140 us | 0.0028 us | 0.0025 us |         - |
 |      ThreadHelperLocked |              2 | 1.694 us | 0.0034 us | 0.0032 us |         - |
 

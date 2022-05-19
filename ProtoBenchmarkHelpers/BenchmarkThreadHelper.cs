@@ -9,6 +9,8 @@ namespace Proto.Utilities.Benchmark
     /// </summary>
     public class BenchmarkThreadHelper : IDisposable
     {
+        private static readonly int ProcessorCount = Environment.ProcessorCount;
+
         private class Node
         {
             internal Node next;
@@ -21,8 +23,13 @@ namespace Proto.Utilities.Benchmark
         private int runningThreadCount = 0;
         volatile private int pendingThreadCount;
         volatile private bool isDisposed;
+
+        // Calling thread always consumes head, other threads store their initial consume node in their stack. Calling thread sets current to next before waking all threads.
+        // When threads are done invoking, they will try to take current to continue invoking.
         private Node head, tail;
+        private Node next;
         volatile private Node current;
+
         private List<Exception> exceptions;
 
         /// <summary>
@@ -100,17 +107,23 @@ namespace Proto.Utilities.Benchmark
             tail.next = node;
             tail = node;
 
-            ++runningThreadCount;
-            barrier.AddParticipant();
             // We don't need to store a reference to the thread, it will stay alive until this is disposed or the process terminates.
             // If maxConcurrency is unconstrained, we can more efficiently execute a single action on each thread.
             if (maxConcurrency == -1)
             {
+                ++runningThreadCount;
+                barrier.AddParticipant();
                 new Thread(ThreadRunnerIndividual) { IsBackground = true }.Start(node);
             }
-            else
+            else if (runningThreadCount < maxConcurrency - 1)
             {
-                new Thread(ThreadRunnerMultiple) { IsBackground = true }.Start();
+                ++runningThreadCount;
+                barrier.AddParticipant();
+                new Thread(ThreadRunnerMultiple) { IsBackground = true }.Start(node);
+            }
+            else if (next == null)
+            {
+                next = node;
             }
         }
 
@@ -129,12 +142,12 @@ namespace Proto.Utilities.Benchmark
             pendingThreadCount = runningThreadCount + 1;
             // Caller thread always gets the first action. No need to synchronize access until the barrier is signaled.
             var node = head;
-            current = node.next;
+            current = next;
             
             barrier.SignalAndWait();
 
             Invoke(node);
-            MaybeInvokeActions(TakeNext());
+            InvokeRemainingActionsThenNotifyThreadComplete();
 
             if (pendingThreadCount != 0)
             {
@@ -150,13 +163,22 @@ namespace Proto.Utilities.Benchmark
 
             void WaitForThreads()
             {
+                // If there are more threads running than there are hardware threads to run them on, yield this thread via Monitor.Wait.
+                if (pendingThreadCount > ProcessorCount)
+                {
+                    MonitorWait();
+                    return;
+                }
+
                 var spinner = new SpinWait();
                 do
                 {
                     if (spinner.NextSpinWillYield)
                     {
-                        MonitorWait();
-                        return;
+                        // Just do a simple thread yield and reset the spinner so it won't do a full sleep.
+                        spinner = new SpinWait();
+                        Thread.Yield();
+                        continue;
                     }
                     spinner.SpinOnce();
                 } while (pendingThreadCount != 0);
@@ -174,12 +196,14 @@ namespace Proto.Utilities.Benchmark
             }
         }
 
-        private void ThreadRunnerMultiple(object _)
+        private void ThreadRunnerMultiple(object state)
         {
+            Node node = (Node) state;
             while (!isDisposed)
             {
                 barrier.SignalAndWait();
-                MaybeInvokeActions(TakeNext());
+                Invoke(node);
+                InvokeRemainingActionsThenNotifyThreadComplete();
             }
         }
 
@@ -208,8 +232,9 @@ namespace Proto.Utilities.Benchmark
             return node;
         }
 
-        private void MaybeInvokeActions(Node node)
+        private void InvokeRemainingActionsThenNotifyThreadComplete()
         {
+            var node = TakeNext();
             while (node != null)
             {
                 Invoke(node);
