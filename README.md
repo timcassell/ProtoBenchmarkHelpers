@@ -76,18 +76,18 @@ Compare to `System.Threading.Tasks.Parallel`:
 
 |                  Method | MaxConcurrency |     Mean |     Error |    StdDev | Allocated |
 |------------------------ |--------------- |---------:|----------:|----------:|----------:|
-|        ParallelOverhead |             -1 | 3.714 us | 0.0741 us | 0.1015 us |     575 B |
-|     ParallelInterlocked |             -1 | 3.969 us | 0.0776 us | 0.0924 us |     578 B |
-|          ParallelLocked |             -1 | 4.326 us | 0.0351 us | 0.0293 us |     585 B |
-|    ThreadHelperOverhead |             -1 | 1.031 μs | 0.0022 μs | 0.0020 μs |         - |
-| ThreadHelperInterlocked |             -1 | 1.158 μs | 0.0030 μs | 0.0025 μs |         - |
-|      ThreadHelperLocked |             -1 | 1.754 μs | 0.0038 μs | 0.0036 μs |         - |
-|        ParallelOverhead |              2 | 2.504 us | 0.0173 us | 0.0153 us |   1,344 B |
-|     ParallelInterlocked |              2 | 2.482 us | 0.0159 us | 0.0133 us |   1,344 B |
-|          ParallelLocked |              2 | 2.552 us | 0.0143 us | 0.0127 us |   1,344 B |
-|    ThreadHelperOverhead |              2 | 1.038 us | 0.0030 us | 0.0027 us |         - |
-| ThreadHelperInterlocked |              2 | 1.140 us | 0.0028 us | 0.0025 us |         - |
-|      ThreadHelperLocked |              2 | 1.694 us | 0.0034 us | 0.0032 us |         - |
+|        ParallelOverhead |             -1 | 4.222 us | 0.0625 us | 0.0585 us |     573 B |
+|     ParallelInterlocked |             -1 | 4.328 us | 0.0734 us | 0.0686 us |     579 B |
+|          ParallelLocked |             -1 | 4.658 us | 0.0303 us | 0.0284 us |     585 B |
+|    ThreadHelperOverhead |             -1 | 1.010 us | 0.0030 us | 0.0027 us |         - |
+| ThreadHelperInterlocked |             -1 | 1.144 us | 0.0051 us | 0.0048 us |         - |
+|      ThreadHelperLocked |             -1 | 1.746 us | 0.0041 us | 0.0034 us |         - |
+|        ParallelOverhead |              2 | 2.607 us | 0.0364 us | 0.0304 us |   1,344 B |
+|     ParallelInterlocked |              2 | 2.669 us | 0.0218 us | 0.0182 us |   1,344 B |
+|          ParallelLocked |              2 | 2.685 us | 0.0466 us | 0.0436 us |   1,344 B |
+|    ThreadHelperOverhead |              2 | 1.012 us | 0.0064 us | 0.0050 us |         - |
+| ThreadHelperInterlocked |              2 | 1.180 us | 0.0033 us | 0.0028 us |         - |
+|      ThreadHelperLocked |              2 | 1.647 us | 0.0084 us | 0.0079 us |         - |
 
 <details><summary>Benchmark Code</summary>
 <p>

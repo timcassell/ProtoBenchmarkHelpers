@@ -26,7 +26,9 @@ namespace Proto.Utilities.Benchmark
 
         // Calling thread always consumes head, other threads store their initial consume node in their stack. Calling thread sets current to next before waking all threads.
         // When threads are done invoking, they will try to take current to continue invoking.
-        private Node head, tail;
+        private Node callerNode;
+        private readonly Node headSentinel;
+        private Node tail;
         private Node next;
         volatile private Node current;
 
@@ -43,6 +45,10 @@ namespace Proto.Utilities.Benchmark
                 throw new ArgumentOutOfRangeException(nameof(maxConcurrency), "maxConcurrency must be positive or -1. Value: " + maxConcurrency);
             }
             this.maxConcurrency = maxConcurrency;
+            headSentinel = new Node { action = () => { } };
+            headSentinel.next = headSentinel;
+            tail = headSentinel;
+            next = headSentinel;
         }
 
         /// <summary>
@@ -50,7 +56,10 @@ namespace Proto.Utilities.Benchmark
         /// </summary>
         ~BenchmarkThreadHelper()
         {
-            DisposeCore();
+            if (!isDisposed)
+            {
+                DisposeCore();
+            }
         }
 
         /// <summary>
@@ -63,26 +72,24 @@ namespace Proto.Utilities.Benchmark
                 throw new InvalidOperationException("Object is disposed");
             }
 
-            DisposeCore();
             GC.SuppressFinalize(this);
+            DisposeCore();
         }
 
         private void DisposeCore()
         {
             isDisposed = true;
-            // Overwrite the action on every node to do nothing, then run ExecuteAndWait so that the threads can continue and exit gracefully.
-            for (var node = head; node != null; node = head)
+            // Overwrite the action on every node to do nothing, then signal the other threads to continue and exit gracefully.
+            for (var node = headSentinel.next; node != headSentinel; node = node.next)
             {
                 node.action = () => { };
             }
-            ExecuteAndWait();
+            barrier.SignalAndWait();
             // Remove the action on every node so it will throw if the user attempts to invoke again.
-            for (var node = head; node != null; node = head)
+            for (var node = headSentinel.next; node != headSentinel; node = node.next)
             {
                 node.action = null;
             }
-            // Remove participants in case ExecuteAndWait is called after this, so it won't dead lock.
-            barrier.RemoveParticipants(runningThreadCount);
         }
 
         /// <summary>
@@ -96,16 +103,15 @@ namespace Proto.Utilities.Benchmark
                 throw new InvalidOperationException("Object is disposed");
             }
 
-            var node = new Node() { action = action };
-            if (head == null)
+            var node = new Node() { action = action, next = headSentinel };
+            tail.next = node;
+            tail = node;
+            if (callerNode == null)
             {
-                head = node;
-                tail = node;
+                callerNode = node;
                 // The first action will always be ran on the calling thread, we don't need to spawn a new thread.
                 return;
             }
-            tail.next = node;
-            tail = node;
 
             // We don't need to store a reference to the thread, it will stay alive until this is disposed or the process terminates.
             // If maxConcurrency is unconstrained, we can more efficiently execute a single action on each thread.
@@ -121,7 +127,7 @@ namespace Proto.Utilities.Benchmark
                 barrier.AddParticipant();
                 new Thread(ThreadRunnerMultiple) { IsBackground = true }.Start(node);
             }
-            else if (next == null)
+            else if (next == headSentinel)
             {
                 next = node;
             }
@@ -141,9 +147,12 @@ namespace Proto.Utilities.Benchmark
 
             pendingThreadCount = runningThreadCount + 1;
             // Caller thread always gets the first action. No need to synchronize access until the barrier is signaled.
-            var node = head;
+            var node = callerNode;
             current = next;
-            
+
+            var oldNext = headSentinel.next;
+            headSentinel.next = headSentinel;
+
             barrier.SignalAndWait();
 
             Invoke(node);
@@ -153,6 +162,7 @@ namespace Proto.Utilities.Benchmark
             {
                 WaitForThreads();
             }
+            headSentinel.next = oldNext;
 
             var exs = exceptions;
             if (exs != null)
@@ -205,6 +215,7 @@ namespace Proto.Utilities.Benchmark
                 Invoke(node);
                 InvokeRemainingActionsThenNotifyThreadComplete();
             }
+            barrier.RemoveParticipant();
         }
 
         private void ThreadRunnerIndividual(object state)
@@ -216,26 +227,24 @@ namespace Proto.Utilities.Benchmark
                 Invoke(node);
                 NotifyThreadComplete();
             }
+            barrier.RemoveParticipant();
         }
 
         private Node TakeNext()
         {
+            // Current should not be null and Node.next is never null (creates a circular chain), so we don't need to check for null.
             Node node;
             do
             {
                 node = current;
-                if (node == null)
-                {
-                    break;
-                }
-            } while (Interlocked.CompareExchange(ref current, node.next, node) == node);
+            } while (Interlocked.CompareExchange(ref current, node.next, node) != node);
             return node;
         }
 
         private void InvokeRemainingActionsThenNotifyThreadComplete()
         {
             var node = TakeNext();
-            while (node != null)
+            while (node != headSentinel)
             {
                 Invoke(node);
                 node = TakeNext();
