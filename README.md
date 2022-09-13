@@ -74,20 +74,20 @@ public class ThreadBenchmarks
 
 Compare to `System.Threading.Tasks.Parallel`:
 
-|                  Method | MaxConcurrency |     Mean |     Error |    StdDev | Allocated |
-|------------------------ |--------------- |---------:|----------:|----------:|----------:|
-|        ParallelOverhead |             -1 | 4.222 us | 0.0625 us | 0.0585 us |     573 B |
-|     ParallelInterlocked |             -1 | 4.328 us | 0.0734 us | 0.0686 us |     579 B |
-|          ParallelLocked |             -1 | 4.658 us | 0.0303 us | 0.0284 us |     585 B |
-|    ThreadHelperOverhead |             -1 | 1.010 us | 0.0030 us | 0.0027 us |         - |
-| ThreadHelperInterlocked |             -1 | 1.144 us | 0.0051 us | 0.0048 us |         - |
-|      ThreadHelperLocked |             -1 | 1.746 us | 0.0041 us | 0.0034 us |         - |
-|        ParallelOverhead |              2 | 2.607 us | 0.0364 us | 0.0304 us |   1,344 B |
-|     ParallelInterlocked |              2 | 2.669 us | 0.0218 us | 0.0182 us |   1,344 B |
-|          ParallelLocked |              2 | 2.685 us | 0.0466 us | 0.0436 us |   1,344 B |
-|    ThreadHelperOverhead |              2 | 1.012 us | 0.0064 us | 0.0050 us |         - |
-| ThreadHelperInterlocked |              2 | 1.180 us | 0.0033 us | 0.0028 us |         - |
-|      ThreadHelperLocked |              2 | 1.647 us | 0.0084 us | 0.0079 us |         - |
+|                  Method | MaxConcurrency |       Mean |    Error |   StdDev | Allocated |
+|------------------------ |--------------- |-----------:|---------:|---------:|----------:|
+|        ParallelOverhead |             -1 | 4,063.6 ns | 72.60 ns | 67.91 ns |     567 B |
+|     ParallelInterlocked |             -1 | 4,364.6 ns | 45.91 ns | 42.95 ns |     575 B |
+|          ParallelLocked |             -1 | 4,679.3 ns | 47.28 ns | 44.23 ns |     580 B |
+|    ThreadHelperOverhead |             -1 | 1,125.2 ns |  2.35 ns |  1.96 ns |         - |
+| ThreadHelperInterlocked |             -1 | 1,144.2 ns |  2.06 ns |  1.72 ns |         - |
+|      ThreadHelperLocked |             -1 | 1,667.7 ns |  5.93 ns |  5.54 ns |         - |
+|        ParallelOverhead |              2 | 2,784.2 ns | 13.42 ns | 12.56 ns |    1344 B |
+|     ParallelInterlocked |              2 | 2,771.0 ns | 17.82 ns | 16.67 ns |    1344 B |
+|          ParallelLocked |              2 | 2,744.3 ns | 12.67 ns | 11.85 ns |    1344 B |
+|    ThreadHelperOverhead |              2 |   825.2 ns |  3.67 ns |  3.44 ns |         - |
+| ThreadHelperInterlocked |              2 |   902.3 ns |  7.13 ns |  6.67 ns |         - |
+|      ThreadHelperLocked |              2 | 1,229.7 ns |  3.20 ns |  2.84 ns |         - |
 
 <details><summary>Benchmark Code</summary>
 <p>
@@ -175,7 +175,7 @@ public class ThreadBenchmarks
     [GlobalSetup(Target = nameof(ThreadHelperOverhead))]
     public void SetupOverhead()
     {
-        threadHelper = new BenchmarkThreadHelper();
+        threadHelper = new BenchmarkThreadHelper(MaxConcurrency);
         threadHelper.AddAction(overheadAction);
         threadHelper.AddAction(overheadAction);
         threadHelper.AddAction(overheadAction);
@@ -191,7 +191,7 @@ public class ThreadBenchmarks
     [GlobalSetup(Target = nameof(ThreadHelperInterlocked))]
     public void SetupInterlocked()
     {
-        threadHelper = new BenchmarkThreadHelper();
+        threadHelper = new BenchmarkThreadHelper(MaxConcurrency);
         threadHelper.AddAction(interlockedAction);
         threadHelper.AddAction(interlockedAction);
         threadHelper.AddAction(interlockedAction);
@@ -207,7 +207,7 @@ public class ThreadBenchmarks
     [GlobalSetup(Target = nameof(ThreadHelperLocked))]
     public void SetupLocked()
     {
-        threadHelper = new BenchmarkThreadHelper();
+        threadHelper = new BenchmarkThreadHelper(MaxConcurrency);
         threadHelper.AddAction(lockedAction);
         threadHelper.AddAction(lockedAction);
         threadHelper.AddAction(lockedAction);
