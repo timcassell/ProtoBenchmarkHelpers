@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Threading;
 
@@ -7,7 +8,7 @@ namespace Proto.Utilities.Benchmark
     /// <summary>
     /// A helper class used to efficiently benchmark actions ran on multiple threads concurrently.
     /// </summary>
-    public class BenchmarkThreadHelper : IDisposable
+    public class BenchmarkThreadHelper : IDisposable, IEnumerable // IEnumerable only included because the C# compiler requires it to use collection initializer.
     {
         private static readonly int ProcessorCount = Environment.ProcessorCount;
 
@@ -37,14 +38,18 @@ namespace Proto.Utilities.Benchmark
         /// <summary>
         /// Create a new <see cref="BenchmarkThreadHelper"/> instance with an optional <see cref="maxConcurrency"/>.
         /// </summary>
-        /// <param name="maxConcurrency">Sets the maximum number of threads that can run actions in parallel. -1 means no maximum. Default -1.</param>
+        /// <param name="maxConcurrency">Sets the maximum number of threads that can run actions in parallel. The default of -1 will use Environment.ProcessorCount.</param>
         public BenchmarkThreadHelper(int maxConcurrency = -1)
         {
-            if (maxConcurrency == 0 || maxConcurrency < -1)
+            if (maxConcurrency == -1)
+            {
+                maxConcurrency = ProcessorCount;
+            }
+            else if (maxConcurrency == 0 || maxConcurrency < -1)
             {
                 throw new ArgumentOutOfRangeException(nameof(maxConcurrency), "maxConcurrency must be positive or -1. Value: " + maxConcurrency);
             }
-            this.maxConcurrency = maxConcurrency;
+            this.maxConcurrency = Math.Min(maxConcurrency, ProcessorCount); // We don't need to create more software threads than there are hardware threads available.
             headSentinel = new Node { action = () => { } };
             headSentinel.next = headSentinel;
             tail = headSentinel;
@@ -84,7 +89,7 @@ namespace Proto.Utilities.Benchmark
             {
                 node.action = () => { };
             }
-            barrier.SignalAndWait();
+            ExecuteAndWait();
             // Remove the action on every node so it will throw if the user attempts to invoke again.
             for (var node = headSentinel.next; node != headSentinel; node = node.next)
             {
@@ -96,7 +101,7 @@ namespace Proto.Utilities.Benchmark
         /// Add an action to be ran in parallel. This method is not thread-safe.
         /// </summary>
         /// <param name="action">The action to be ran in parallel.</param>
-        public void AddAction(Action action)
+        public void Add(Action action)
         {
             if (isDisposed)
             {
@@ -113,19 +118,12 @@ namespace Proto.Utilities.Benchmark
                 return;
             }
 
-            // We don't need to store a reference to the thread, it will stay alive until this is disposed or the process terminates.
-            // If maxConcurrency is unconstrained, we can more efficiently execute a single action on each thread.
-            if (maxConcurrency == -1)
+            if (runningThreadCount < maxConcurrency - 1) // Subtract 1 because we already have the caller thread to work with.
             {
                 ++runningThreadCount;
                 barrier.AddParticipant();
-                new Thread(ThreadRunnerIndividual) { IsBackground = true }.Start(node);
-            }
-            else if (runningThreadCount < maxConcurrency - 1)
-            {
-                ++runningThreadCount;
-                barrier.AddParticipant();
-                new Thread(ThreadRunnerMultiple) { IsBackground = true }.Start(node);
+                // We don't need to store a reference to the thread, it will stay alive until this is disposed or the process terminates.
+                new Thread(ThreadRunner) { IsBackground = true }.Start(node);
             }
             else if (next == headSentinel)
             {
@@ -173,13 +171,6 @@ namespace Proto.Utilities.Benchmark
 
             void WaitForThreads()
             {
-                // If there are more threads running than there are hardware threads to run them on, yield this thread via Monitor.Wait.
-                if (pendingThreadCount > ProcessorCount)
-                {
-                    MonitorWait();
-                    return;
-                }
-
                 var spinner = new SpinWait();
                 do
                 {
@@ -193,20 +184,9 @@ namespace Proto.Utilities.Benchmark
                     spinner.SpinOnce();
                 } while (pendingThreadCount != 0);
             }
-
-            void MonitorWait()
-            {
-                lock (barrier)
-                {
-                    if (pendingThreadCount != 0)
-                    {
-                        Monitor.Wait(barrier);
-                    }
-                }
-            }
         }
 
-        private void ThreadRunnerMultiple(object state)
+        private void ThreadRunner(object state)
         {
             Node node = (Node) state;
             while (!isDisposed)
@@ -214,18 +194,6 @@ namespace Proto.Utilities.Benchmark
                 barrier.SignalAndWait();
                 Invoke(node);
                 InvokeRemainingActionsThenNotifyThreadComplete();
-            }
-            barrier.RemoveParticipant();
-        }
-
-        private void ThreadRunnerIndividual(object state)
-        {
-            Node node = (Node) state;
-            while (!isDisposed)
-            {
-                barrier.SignalAndWait();
-                Invoke(node);
-                NotifyThreadComplete();
             }
             barrier.RemoveParticipant();
         }
@@ -249,7 +217,7 @@ namespace Proto.Utilities.Benchmark
                 Invoke(node);
                 node = TakeNext();
             }
-            NotifyThreadComplete();
+            Interlocked.Decrement(ref pendingThreadCount);
         }
 
         private void Invoke(Node node)
@@ -268,15 +236,9 @@ namespace Proto.Utilities.Benchmark
             }
         }
 
-        private void NotifyThreadComplete()
+        IEnumerator IEnumerable.GetEnumerator()
         {
-            if (Interlocked.Decrement(ref pendingThreadCount) == 0)
-            {
-                lock (barrier)
-                {
-                    Monitor.Pulse(barrier);
-                }
-            }
+            throw new NotImplementedException();
         }
     }
 }
