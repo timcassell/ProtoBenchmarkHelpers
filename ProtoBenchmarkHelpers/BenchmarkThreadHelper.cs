@@ -90,11 +90,8 @@ namespace Proto.Utilities.Benchmark
                 node.action = () => { };
             }
             ExecuteAndWait();
-            // Remove the action on every node so it will throw if the user attempts to invoke again.
-            for (var node = headSentinel.next; node != headSentinel; node = node.next)
-            {
-                node.action = null;
-            }
+            // Remove the caller node so it will throw if the user attempts to invoke again.
+            callerNode = null;
         }
 
         /// <summary>
