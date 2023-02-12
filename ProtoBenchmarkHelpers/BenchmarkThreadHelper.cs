@@ -33,6 +33,7 @@ namespace Proto.Utilities.Benchmark
         private Node next;
         volatile private Node current;
 
+        private readonly Thread[] threads;
         private List<Exception> exceptions;
 
         /// <summary>
@@ -50,6 +51,7 @@ namespace Proto.Utilities.Benchmark
                 throw new ArgumentOutOfRangeException(nameof(maxConcurrency), "maxConcurrency must be positive or -1. Value: " + maxConcurrency);
             }
             this.maxConcurrency = Math.Min(maxConcurrency, ProcessorCount); // We don't need to create more software threads than there are hardware threads available.
+            threads = new Thread[this.maxConcurrency];
             headSentinel = new Node { action = () => { } };
             headSentinel.next = headSentinel;
             tail = headSentinel;
@@ -92,6 +94,11 @@ namespace Proto.Utilities.Benchmark
             ExecuteAndWait();
             // Remove the caller node so it will throw if the user attempts to invoke again.
             callerNode = null;
+            // Join the threads to make sure they are completely cleaned up before this method returns to prevent background noise in benchmarks.
+            for (int i = 0; i < runningThreadCount; ++i)
+            {
+                threads[i].Join();
+            }
         }
 
         /// <summary>
@@ -117,10 +124,11 @@ namespace Proto.Utilities.Benchmark
 
             if (runningThreadCount < maxConcurrency - 1) // Subtract 1 because we already have the caller thread to work with.
             {
-                ++runningThreadCount;
                 barrier.AddParticipant();
-                // We don't need to store a reference to the thread, it will stay alive until this is disposed or the process terminates.
-                new Thread(ThreadRunner) { IsBackground = true }.Start(node);
+                var thread = new Thread(ThreadRunner) { IsBackground = true };
+                threads[runningThreadCount] = thread;
+                ++runningThreadCount;
+                thread.Start(node);
             }
             else if (next == headSentinel)
             {
@@ -138,7 +146,7 @@ namespace Proto.Utilities.Benchmark
         public void ExecuteAndWait()
         {
             // Not checking disposed here since this is performance critical.
-            // If this has been disposed, or if AddAction was not called before this, head will be null or its action will be null, so this will throw automatically.
+            // If this has been disposed, or if Add was not called before this, head will be null or its action will be null, so this will throw automatically.
 
             pendingThreadCount = runningThreadCount + 1;
             // Caller thread always gets the first action. No need to synchronize access until the barrier is signaled.
