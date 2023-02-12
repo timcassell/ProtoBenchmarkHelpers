@@ -76,7 +76,7 @@ namespace Proto.Utilities.Benchmark
         {
             if (isDisposed)
             {
-                throw new InvalidOperationException("Object is disposed");
+                throw new ObjectDisposedException(nameof(BenchmarkThreadHelper));
             }
 
             GC.SuppressFinalize(this);
@@ -109,7 +109,7 @@ namespace Proto.Utilities.Benchmark
         {
             if (isDisposed)
             {
-                throw new InvalidOperationException("Object is disposed");
+                throw new ObjectDisposedException(nameof(BenchmarkThreadHelper));
             }
 
             var node = new Node() { action = action, next = headSentinel };
