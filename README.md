@@ -88,3 +88,52 @@ Compare to `System.Threading.Tasks.Parallel`:
 |    ThreadHelperOverhead |              2 |   602.1 ns |  2.39 ns |   2.23 ns |         - |
 | ThreadHelperInterlocked |              2 |   697.4 ns |  2.77 ns |   2.59 ns |         - |
 |      ThreadHelperLocked |              2 |   992.7 ns |  2.93 ns |   2.74 ns |         - |
+
+
+
+## AsyncBenchmarkThreadHelper
+
+Very similar to `BenchmarkThreadHelper`, except `AsyncBenchmarkThreadHelper` supports async actions.
+
+```cs
+public class ThreadAsyncBenchmarks
+{
+    private const int numTasks = 2;
+
+    [ParamsAllValues]
+    public bool Yield { get; set; }
+
+    private AsyncBenchmarkThreadHelper asyncThreadHelper;
+
+    private async ValueTask FuncAsync()
+    {
+        if (Yield)
+            await Task.Yield();
+    }
+
+    [GlobalSetup(Target = nameof(AsyncThreadHelper))]
+    public void SetupAsyncThreadHelper()
+    {
+        asyncThreadHelper = new();
+        for (int i = 0; i < numTasks; ++i)
+        {
+            asyncThreadHelper.Add(() => FuncAsync());
+        }
+    }
+
+    [Benchmark]
+    public ValueTask AsyncThreadHelper()
+    {
+        return asyncThreadHelper.ExecuteAndWaitAsync();
+    }
+}
+```
+
+Compare to `Task.Run` and `Task.WhenAll`:
+
+|            Method | Yield |       Mean |     Error |    StdDev | Allocated |
+|------------------ |------ |-----------:|----------:|----------:|----------:|
+|           TaskRun | False | 3,568.3 ns |  17.02 ns |  15.92 ns |     408 B |
+| AsyncThreadHelper | False |   833.6 ns |   2.97 ns |   2.48 ns |         - |
+|           TaskRun |  True | 5,769.1 ns | 109.06 ns | 112.00 ns |     648 B |
+| AsyncThreadHelper |  True | 3,666.5 ns |  10.15 ns |   9.00 ns |     240 B |
