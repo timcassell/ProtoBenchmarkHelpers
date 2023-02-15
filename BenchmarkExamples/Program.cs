@@ -50,6 +50,12 @@ namespace BenchmarkExamples
             };
         }
 
+        [GlobalCleanup]
+        public void Cleanup()
+        {
+            threadHelper?.Dispose();
+        }
+
 
         [GlobalSetup(Target = nameof(ParallelOverhead))]
         public void SetupParallelOverhead()

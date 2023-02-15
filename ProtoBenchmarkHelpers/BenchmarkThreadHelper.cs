@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace Proto.Utilities.Benchmark
@@ -37,9 +38,9 @@ namespace Proto.Utilities.Benchmark
         private List<Exception> exceptions;
 
         /// <summary>
-        /// Create a new <see cref="BenchmarkThreadHelper"/> instance with an optional <see cref="maxConcurrency"/>.
+        /// Create a new <see cref="BenchmarkThreadHelper"/> instance with an optional <paramref name="maxConcurrency"/>.
         /// </summary>
-        /// <param name="maxConcurrency">Sets the maximum number of threads that can run actions in parallel. The default of -1 will use Environment.ProcessorCount.</param>
+        /// <param name="maxConcurrency">Sets the maximum number of threads that can run actions in parallel. The default of -1 will use <see cref="Environment.ProcessorCount"/>.</param>
         public BenchmarkThreadHelper(int maxConcurrency = -1)
         {
             if (maxConcurrency == -1)
@@ -52,7 +53,9 @@ namespace Proto.Utilities.Benchmark
             }
             this.maxConcurrency = Math.Min(maxConcurrency, ProcessorCount); // We don't need to create more software threads than there are hardware threads available.
             threads = new Thread[this.maxConcurrency];
-            headSentinel = new Node { action = () => { } };
+            // headSentinel's action is null, it will never be invoked.
+            // We use headSentinel to produce a circular linked-list so we never need to check for null.
+            headSentinel = new Node();
             headSentinel.next = headSentinel;
             tail = headSentinel;
             next = headSentinel;
@@ -86,14 +89,14 @@ namespace Proto.Utilities.Benchmark
         private void DisposeCore()
         {
             isDisposed = true;
+            // Remove the caller node so it will throw if the user attempts to invoke again.
+            callerNode = null;
             // Overwrite the action on every node to do nothing, then signal the other threads to continue and exit gracefully.
             for (var node = headSentinel.next; node != headSentinel; node = node.next)
             {
                 node.action = () => { };
             }
-            ExecuteAndWait();
-            // Remove the caller node so it will throw if the user attempts to invoke again.
-            callerNode = null;
+            barrier.SignalAndWait();
             // Join the threads to make sure they are completely cleaned up before this method returns to prevent background noise in benchmarks.
             for (int i = 0; i < runningThreadCount; ++i)
             {
@@ -112,6 +115,10 @@ namespace Proto.Utilities.Benchmark
                 throw new ObjectDisposedException(nameof(BenchmarkThreadHelper));
             }
 
+            // We use a weak reference to prevent the thread from keeping this alive if it is never disposed.
+            WeakReference<BenchmarkThreadHelper> weakReference = null;
+            // Separate reference to the barrier so that the ThreadRunner does not capture `this`.
+            var localBarrier = barrier;
             var node = new Node() { action = action, next = headSentinel };
             tail.next = node;
             tail = node;
@@ -124,16 +131,40 @@ namespace Proto.Utilities.Benchmark
 
             if (runningThreadCount < maxConcurrency - 1) // Subtract 1 because we already have the caller thread to work with.
             {
-                barrier.AddParticipant();
-                var thread = new Thread(ThreadRunner) { IsBackground = true };
-                threads[runningThreadCount] = thread;
+                var threadIndex = runningThreadCount;
                 ++runningThreadCount;
-                thread.Start(node);
+                localBarrier.AddParticipant();
+                weakReference = new(this, false);
+                var thread = new Thread(ThreadRunner) { IsBackground = true };
+                threads[threadIndex] = thread;
+                thread.Start();
             }
             else if (next == headSentinel)
             {
                 next = node;
             }
+
+            void ThreadRunner(object _)
+            {
+                do
+                {
+                    localBarrier.SignalAndWait();
+                } while (TryInvoke(weakReference, node));
+
+                localBarrier.RemoveParticipant();
+            }
+        }
+
+        // NoInlining to ensure the strong reference never stays on the stack indefinitely, so the GC can collect.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool TryInvoke(WeakReference<BenchmarkThreadHelper> weakReference, Node node)
+        {
+            if (!weakReference.TryGetTarget(out var owner) || owner.isDisposed)
+            {
+                return false;
+            }
+            owner.InvokeThenNotifyThreadComplete(node.action);
+            return true;
         }
 
         /// <summary>
@@ -146,20 +177,18 @@ namespace Proto.Utilities.Benchmark
         public void ExecuteAndWait()
         {
             // Not checking disposed here since this is performance critical.
-            // If this has been disposed, or if Add was not called before this, head will be null or its action will be null, so this will throw automatically.
+            // If this has been disposed, or if Add was not called before this, callernode will be null, so this will throw automatically.
 
-            pendingThreadCount = runningThreadCount + 1;
             // Caller thread always gets the first action. No need to synchronize access until the barrier is signaled.
-            var node = callerNode;
+            var action = callerNode.action;
             current = next;
-
             var oldNext = headSentinel.next;
             headSentinel.next = headSentinel;
+            pendingThreadCount = runningThreadCount + 1;
 
             barrier.SignalAndWait();
 
-            Invoke(node);
-            InvokeRemainingActionsThenNotifyThreadComplete();
+            InvokeThenNotifyThreadComplete(action);
 
             if (pendingThreadCount != 0)
             {
@@ -182,25 +211,13 @@ namespace Proto.Utilities.Benchmark
                     if (spinner.NextSpinWillYield)
                     {
                         // Just do a simple thread yield and reset the spinner so it won't do a full sleep.
-                        spinner = new SpinWait();
                         Thread.Yield();
+                        spinner = new SpinWait();
                         continue;
                     }
                     spinner.SpinOnce();
                 } while (pendingThreadCount != 0);
             }
-        }
-
-        private void ThreadRunner(object state)
-        {
-            Node node = (Node) state;
-            while (!isDisposed)
-            {
-                barrier.SignalAndWait();
-                Invoke(node);
-                InvokeRemainingActionsThenNotifyThreadComplete();
-            }
-            barrier.RemoveParticipant();
         }
 
         private Node TakeNext()
@@ -214,31 +231,26 @@ namespace Proto.Utilities.Benchmark
             return node;
         }
 
-        private void InvokeRemainingActionsThenNotifyThreadComplete()
+        private void InvokeThenNotifyThreadComplete(Action action)
         {
-            var node = TakeNext();
-            while (node != headSentinel)
+            do
             {
-                Invoke(node);
-                node = TakeNext();
-            }
-            Interlocked.Decrement(ref pendingThreadCount);
-        }
-
-        private void Invoke(Node node)
-        {
-            try
-            {
-                node.action();
-            }
-            catch (Exception e)
-            {
-                lock (barrier)
+                try
                 {
-                    exceptions ??= new List<Exception>();
-                    exceptions.Add(e);
+                    action();
                 }
-            }
+                catch (Exception e)
+                {
+                    lock (barrier)
+                    {
+                        exceptions ??= new List<Exception>();
+                        exceptions.Add(e);
+                    }
+                }
+                action = TakeNext().action;
+            } while (action != null); // headSentinel's action is null, that's the tail of the list.
+            
+            Interlocked.Decrement(ref pendingThreadCount);
         }
 
         IEnumerator IEnumerable.GetEnumerator()

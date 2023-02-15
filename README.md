@@ -17,6 +17,12 @@ public class ThreadBenchmarks
     private readonly object locker = new();
     private int counter;
 
+    [GlobalCleanup]
+    public void Cleanup()
+    {
+        threadHelper.Dispose();
+    }
+
     [GlobalSetup(Target = nameof(ThreadHelperInterlocked))]
     public void SetupInterlocked()
     {
