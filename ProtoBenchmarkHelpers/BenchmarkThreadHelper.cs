@@ -51,7 +51,7 @@ namespace Proto.Utilities.Benchmark
             {
                 throw new ArgumentOutOfRangeException(nameof(maxConcurrency), "maxConcurrency must be positive or -1. Value: " + maxConcurrency);
             }
-            this.maxConcurrency = Math.Min(maxConcurrency, ProcessorCount); // We don't need to create more software threads than there are hardware threads available.
+            this.maxConcurrency = maxConcurrency;
             threads = new Thread[this.maxConcurrency];
             // headSentinel's action is null, it will never be invoked.
             // We use headSentinel to produce a circular linked-list so we never need to check for null.
@@ -115,8 +115,6 @@ namespace Proto.Utilities.Benchmark
                 throw new ObjectDisposedException(nameof(BenchmarkThreadHelper));
             }
 
-            // We use a weak reference to prevent the thread from keeping this alive if it is never disposed.
-            WeakReference<BenchmarkThreadHelper> weakReference = null;
             // Separate reference to the barrier so that the ThreadRunner does not capture `this`.
             var localBarrier = barrier;
             var node = new Node() { action = action, next = headSentinel };
@@ -134,24 +132,25 @@ namespace Proto.Utilities.Benchmark
                 var threadIndex = runningThreadCount;
                 ++runningThreadCount;
                 localBarrier.AddParticipant();
-                weakReference = new(this, false);
+                // We use a weak reference to prevent the thread from keeping this alive if it is never disposed.
+                var weakReference = new WeakReference<BenchmarkThreadHelper>(this, false);
                 var thread = new Thread(ThreadRunner) { IsBackground = true };
                 threads[threadIndex] = thread;
                 thread.Start();
+
+                void ThreadRunner(object _)
+                {
+                    do
+                    {
+                        localBarrier.SignalAndWait();
+                    } while (TryInvoke(weakReference, node));
+
+                    localBarrier.RemoveParticipant();
+                }
             }
             else if (next == headSentinel)
             {
                 next = node;
-            }
-
-            void ThreadRunner(object _)
-            {
-                do
-                {
-                    localBarrier.SignalAndWait();
-                } while (TryInvoke(weakReference, node));
-
-                localBarrier.RemoveParticipant();
             }
         }
 

@@ -92,7 +92,7 @@ namespace Proto.Utilities.Benchmark
             {
                 throw new ArgumentOutOfRangeException(nameof(maxConcurrency), "maxConcurrency must be positive or -1. Value: " + maxConcurrency);
             }
-            this.maxConcurrency = Math.Min(maxConcurrency, ProcessorCount); // We don't need to create more software threads than there are hardware threads available.
+            this.maxConcurrency = maxConcurrency;
             threads = new Thread[this.maxConcurrency];
             // headSentinel's action is null, it will never be invoked.
             // We use headSentinel to produce a circular linked-list so we never need to check for null.
@@ -161,8 +161,6 @@ namespace Proto.Utilities.Benchmark
                     : new InvalidOperationException("Cannot Add an action while the execution is still pending.");
             }
 
-            // We use a weak reference to prevent the thread from keeping this alive if it is never disposed.
-            WeakReference<Node> weakReference = null;
             // Separate reference to the barrier so that the ThreadRunner does not capture `this`.
             var localBarrier = barrier;
             var node = new Node(this) { action = action, next = headSentinel };
@@ -181,24 +179,25 @@ namespace Proto.Utilities.Benchmark
                 var threadIndex = runningThreadCount;
                 ++runningThreadCount;
                 localBarrier.AddParticipant();
-                weakReference = new(node, false);
+                // We use a weak reference to prevent the thread from keeping this alive if it is never disposed.
+                var weakReference = new WeakReference<Node>(node, false);
                 var thread = new Thread(ThreadRunner) { IsBackground = true };
                 threads[threadIndex] = thread;
                 thread.Start();
+
+                void ThreadRunner(object _)
+                {
+                    do
+                    {
+                        localBarrier.SignalAndWait();
+                    } while (TryInvoke(weakReference));
+
+                    localBarrier.RemoveParticipant();
+                }
             }
             else if (next == headSentinel)
             {
                 next = node;
-            }
-
-            void ThreadRunner(object _)
-            {
-                do
-                {
-                    localBarrier.SignalAndWait();
-                } while (TryInvoke(weakReference));
-
-                localBarrier.RemoveParticipant();
             }
         }
 
@@ -339,6 +338,7 @@ namespace Proto.Utilities.Benchmark
         {
             // BenchmarkDotNet illegally waits on ValueTasks by calling `ValueTask.GetAwaiter().GetResult()`. See https://github.com/dotnet/BenchmarkDotNet/issues/1595
             // We have to support that usage here to block the calling thread until this is complete.
+            // NOTE: This was fixed in BenchmarkDotNet v0.14.0. If you are using 0.14.0 or newer, this check and WaitForComplete() can be removed.
             if (continuation == noopContinuation)
             {
                 WaitForComplete();
