@@ -22,7 +22,7 @@ namespace Proto.Utilities.Benchmark
 
             internal readonly AsyncBenchmarkThreadHelper owner;
             private readonly Action continuation;
-            private ValueTaskAwaiter awaiter;
+            private ConfiguredValueTaskAwaitable.ConfiguredValueTaskAwaiter awaiter;
 
             internal Node(AsyncBenchmarkThreadHelper owner)
             {
@@ -30,7 +30,7 @@ namespace Proto.Utilities.Benchmark
                 continuation = Continuation;
             }
 
-            internal void AwaitCompletion(ValueTaskAwaiter awaiter)
+            internal void AwaitCompletion(ConfiguredValueTaskAwaitable.ConfiguredValueTaskAwaiter awaiter)
             {
                 this.awaiter = awaiter;
                 awaiter.UnsafeOnCompleted(continuation);
@@ -282,7 +282,7 @@ namespace Proto.Utilities.Benchmark
             {
                 try
                 {
-                    var awaiter = action().GetAwaiter();
+                    var awaiter = action().ConfigureAwait(false).GetAwaiter();
                     if (!awaiter.IsCompleted)
                     {
                         node.AwaitCompletion(awaiter);
